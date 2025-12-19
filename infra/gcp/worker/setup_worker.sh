@@ -5,7 +5,7 @@ source "$(dirname "$0")/../00_env.sh"
 
 echo "Installing base packages..."
 sudo apt-get update
-sudo apt-get install -y git build-essential curl
+sudo apt-get install -y git build-essential curl pkg-config libjpeg-dev zlib1g-dev libpng-dev
 
 echo "Installing Cloud SQL Auth Proxy..."
 sudo mkdir -p /usr/local/bin
@@ -66,7 +66,16 @@ pushd vendor/trellis2_upstream >/dev/null
 # NOTE:
 # - flash-attn 2.x does NOT support older GPUs like Tesla P100 (sm60).
 # - flexgemm is optional; keep it opt-in to avoid build surprises on older GPUs.
-SETUP_ARGS=(--new-env --basic --nvdiffrast --cumesh --o-voxel)
+ENV_NAME="${SOLIDGEN_CONDA_ENV_NAME:-trellis2}"
+SETUP_ARGS=(--basic --nvdiffrast --cumesh --o-voxel)
+
+if conda env list | awk '{print $1}' | grep -Fxq "$ENV_NAME"; then
+  echo "Conda env '$ENV_NAME' already exists; reusing."
+  conda activate "$ENV_NAME"
+else
+  SETUP_ARGS=(--new-env "${SETUP_ARGS[@]}")
+fi
+
 if [ "${SOLIDGEN_ENABLE_FLASH_ATTN:-0}" = "1" ]; then
   SETUP_ARGS+=(--flash-attn)
 fi
