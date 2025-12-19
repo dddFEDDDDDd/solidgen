@@ -29,23 +29,34 @@ git submodule update --init --recursive
 echo "Installing TRELLIS.2 dependencies (this is GPU/CUDA heavy and may take a while)..."
 echo "NOTE: This step uses upstream setup.sh (Conda). Ensure conda is available on this VM image."
 
-if ! command -v conda >/dev/null 2>&1; then
-  echo "ERROR: conda not found. Use a Deep Learning VM image with conda preinstalled, or install Miniconda."
-  exit 1
-fi
+CONDA_SH=""
 
 # Make sure "conda activate" works in non-interactive shells.
-CONDA_SH=""
 if [ -f "/opt/conda/etc/profile.d/conda.sh" ]; then
   # Common on Deep Learning VM images
   CONDA_SH="/opt/conda/etc/profile.d/conda.sh"
+  # shellcheck disable=SC1090
   source "$CONDA_SH"
 elif [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
   CONDA_SH="$HOME/miniconda3/etc/profile.d/conda.sh"
+  # shellcheck disable=SC1090
   source "$CONDA_SH"
 fi
-if [ -z "$CONDA_SH" ]; then
-  echo "ERROR: Could not find conda.sh"
+
+if ! command -v conda >/dev/null 2>&1; then
+  echo "Conda not found. Installing Miniconda..."
+  MINICONDA_DIR="${SOLIDGEN_MINICONDA_DIR:-$HOME/miniconda3}"
+  if [ ! -d "$MINICONDA_DIR" ]; then
+    curl -fsSL "https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh" -o /tmp/miniconda.sh
+    bash /tmp/miniconda.sh -b -p "$MINICONDA_DIR"
+  fi
+  CONDA_SH="$MINICONDA_DIR/etc/profile.d/conda.sh"
+  # shellcheck disable=SC1090
+  source "$CONDA_SH"
+fi
+
+if [ -z "$CONDA_SH" ] || ! command -v conda >/dev/null 2>&1; then
+  echo "ERROR: conda not found. Install conda (Miniconda) and try again."
   exit 1
 fi
 
