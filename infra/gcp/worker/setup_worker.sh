@@ -52,7 +52,18 @@ fi
 # setup.sh is designed to be sourced from the TRELLIS.2 repo root.
 export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
 pushd vendor/trellis2_upstream >/dev/null
-. ./setup.sh --new-env --basic --flash-attn --nvdiffrast --cumesh --o-voxel --flexgemm
+# NOTE:
+# - flash-attn 2.x does NOT support older GPUs like Tesla P100 (sm60).
+# - flexgemm is optional; keep it opt-in to avoid build surprises on older GPUs.
+SETUP_ARGS=(--new-env --basic --nvdiffrast --cumesh --o-voxel)
+if [ "${SOLIDGEN_ENABLE_FLASH_ATTN:-0}" = "1" ]; then
+  SETUP_ARGS+=(--flash-attn)
+fi
+if [ "${SOLIDGEN_ENABLE_FLEXGEMM:-0}" = "1" ]; then
+  SETUP_ARGS+=(--flexgemm)
+fi
+echo "Running TRELLIS.2 setup: ${SETUP_ARGS[*]}"
+. ./setup.sh "${SETUP_ARGS[@]}"
 popd >/dev/null
 
 echo "Installing worker Python deps into the trellis2 conda env..."
