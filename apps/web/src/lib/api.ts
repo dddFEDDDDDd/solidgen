@@ -33,7 +33,7 @@ export type ApiNowPaymentsInvoiceResponse = { invoice_url: string; invoice_id: s
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080";
 
-export async function apiFetch<T>(path: string, opts: RequestInit = {}, token?: string): Promise<T> {
+export async function apiFetch<T>(path: string, opts: RequestInit = {}, token?: string | null): Promise<T> {
   const headers = new Headers(opts.headers);
   headers.set("Content-Type", "application/json");
   if (token) headers.set("Authorization", `Bearer ${token}`);

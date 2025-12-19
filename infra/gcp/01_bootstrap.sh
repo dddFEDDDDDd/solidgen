@@ -51,6 +51,10 @@ gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --role="roles/cloudsql.client" >/dev/null
 
 gcloud projects add-iam-policy-binding "$PROJECT_ID" \
+  --member="serviceAccount:${API_SA_EMAIL}" \
+  --role="roles/secretmanager.secretAccessor" >/dev/null
+
+gcloud projects add-iam-policy-binding "$PROJECT_ID" \
   --member="serviceAccount:${WORKER_SA_EMAIL}" \
   --role="roles/pubsub.subscriber" >/dev/null
 
