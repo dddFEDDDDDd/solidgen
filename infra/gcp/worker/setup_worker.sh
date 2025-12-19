@@ -19,7 +19,7 @@ echo "Cloning solidgen repo (if needed)..."
 if [ ! -d "/opt/solidgen/.git" ]; then
   sudo mkdir -p /opt/solidgen
   sudo chown -R "$USER":"$USER" /opt/solidgen
-  git clone "https://github.com/dddFEDDDDDDDd/solidgen.git" /opt/solidgen
+  git clone "https://github.com/dddFEDDDDDd/solidgen.git" /opt/solidgen
 fi
 
 cd /opt/solidgen

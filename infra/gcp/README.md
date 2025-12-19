@@ -4,7 +4,7 @@ Target project: `solidgen-481701` (region `us-central1`).
 
 ## 0) One-time: clone + init submodules
 ```bash
-git clone https://github.com/dddFEDDDDDDDd/solidgen.git
+git clone https://github.com/dddFEDDDDDd/solidgen.git
 cd solidgen
 git submodule update --init --recursive
 ```
