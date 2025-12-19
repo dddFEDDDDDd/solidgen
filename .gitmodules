@@ -1,0 +1,4 @@
+[submodule "vendor/trellis2_upstream"]
+	path = vendor/trellis2_upstream
+	url = https://github.com/microsoft/TRELLIS.2.git
+	branch = main
