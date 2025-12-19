@@ -13,7 +13,17 @@ from solidgen_worker.config import settings
 
 @contextlib.contextmanager
 def db_conn():
-    conn = psycopg2.connect(settings.database_url)
+    # Prefer discrete settings to avoid URL encoding issues with special chars.
+    if settings.database_url:
+        conn = psycopg2.connect(settings.database_url)
+    else:
+        conn = psycopg2.connect(
+            host=settings.db_host,
+            port=settings.db_port,
+            user=settings.db_user,
+            password=settings.db_password,
+            dbname=settings.db_name,
+        )
     try:
         yield conn
     finally:
