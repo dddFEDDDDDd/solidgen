@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import signal
 import sys
@@ -25,6 +26,9 @@ _stop = False
 _future = None
 
 
+logger = logging.getLogger("solidgen-worker")
+
+
 def _handle_sigterm(_signum, _frame):
     global _stop
     _stop = True
@@ -34,26 +38,32 @@ def _handle_sigterm(_signum, _frame):
 
 
 def process_job(job_id: uuid.UUID):
+    logger.info("Processing job_id=%s", job_id)
     with db_conn() as conn:
         conn.autocommit = False
         job = fetch_job(conn, job_id)
         if not job:
+            logger.error("Job not found in DB (job_id=%s). Check worker DATABASE_URL / proxy.", job_id)
             conn.rollback()
-            return
+            raise RuntimeError(f"job_not_found:{job_id}")
 
         status = str(job.get("status") or "")
         if status in {"SUCCEEDED"}:
+            logger.info("Job already SUCCEEDED (job_id=%s); skipping.", job_id)
             conn.rollback()
             return
         if status in {"RUNNING"}:
+            logger.info("Job already RUNNING (job_id=%s); skipping.", job_id)
             conn.rollback()
             return
         if status in {"FAILED"}:
+            logger.info("Job already FAILED (job_id=%s); skipping.", job_id)
             conn.rollback()
             return
 
         mark_job_running(conn, job_id)
         conn.commit()
+        logger.info("Marked RUNNING (job_id=%s)", job_id)
 
     # Heavy work outside transaction
     try:
@@ -82,8 +92,10 @@ def process_job(job_id: uuid.UUID):
             conn2.autocommit = False
             mark_job_succeeded(conn2, job_id, output_uri)
             conn2.commit()
+        logger.info("Marked SUCCEEDED (job_id=%s, output=%s)", job_id, output_uri)
     except Exception as e:
         err = f"{type(e).__name__}: {e}"
+        logger.exception("Job failed (job_id=%s): %s", job_id, err)
         with db_conn() as conn3:
             conn3.autocommit = False
             mark_job_failed(conn3, job_id, err)
@@ -94,6 +106,10 @@ def process_job(job_id: uuid.UUID):
 
 
 def main():
+    logging.basicConfig(
+        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     signal.signal(signal.SIGTERM, _handle_sigterm)
     signal.signal(signal.SIGINT, _handle_sigterm)
 
@@ -103,14 +119,27 @@ def main():
     flow = pubsub_v1.types.FlowControl(max_messages=1)
 
     def callback(message: pubsub_v1.subscriber.message.Message):
+        if _stop:
+            message.nack()
+            return
         try:
             data = json.loads(message.data.decode("utf-8"))
             job_id = uuid.UUID(data["job_id"])
+        except Exception:
+            # If parsing fails, ack to avoid poison-pill loops.
+            logger.exception("Invalid Pub/Sub message; acking. data=%r", message.data)
+            message.ack()
+            return
+
+        try:
+            logger.info("Received Pub/Sub message job_id=%s", job_id)
             process_job(job_id)
             message.ack()
+            logger.info("Acked Pub/Sub message job_id=%s", job_id)
         except Exception:
-            # If parsing fails, ack to avoid poison-pill loops
-            message.ack()
+            # NACK so it retries (DB down, proxy misconfigured, transient GCS, etc.)
+            logger.exception("Error processing job_id=%s; nacking for retry.", job_id)
+            message.nack()
 
     global _future
     _future = subscriber.subscribe(sub_path, callback=callback, flow_control=flow)
