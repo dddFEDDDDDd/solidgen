@@ -10,7 +10,9 @@ API_SA_EMAIL="${API_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/solidgen-api:$(date +%Y%m%d-%H%M%S)"
 
 echo "Building API image: $IMAGE"
-gcloud builds submit --tag "$IMAGE" ../../apps/api
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+gcloud builds submit --tag "$IMAGE" "${REPO_ROOT}/apps/api"
 
 echo "Deploying Cloud Run API service: $CLOUD_RUN_API_SERVICE"
 CLOUDSQL_CONN_NAME="$(gcloud sql instances describe "$CLOUDSQL_INSTANCE" --format='value(connectionName)')"

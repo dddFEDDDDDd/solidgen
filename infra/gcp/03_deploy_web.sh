@@ -10,7 +10,9 @@ API_URL="$(gcloud run services describe "$CLOUD_RUN_API_SERVICE" --region "$REGI
 IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${AR_REPO}/solidgen-web:$(date +%Y%m%d-%H%M%S)"
 
 echo "Building web image: $IMAGE"
-gcloud builds submit --tag "$IMAGE" ../../apps/web
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+gcloud builds submit --tag "$IMAGE" "${REPO_ROOT}/apps/web"
 
 echo "Deploying Cloud Run web service: $CLOUD_RUN_WEB_SERVICE"
 gcloud run deploy "$CLOUD_RUN_WEB_SERVICE" \
