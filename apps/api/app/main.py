@@ -53,6 +53,7 @@ app.add_middleware(
 )
 
 
+@app.get("/health")
 @app.get("/healthz")
 def healthz():
     return {"ok": True, "service": "solidgen-api"}
