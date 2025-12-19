@@ -139,17 +139,22 @@ def create_job(req: CreateJobRequest, db: Session = Depends(get_db), user: User 
         cost_credits=cost,
     )
 
-    # Atomic-ish charge + job insert
-    user.credits_balance -= cost
-    ledger = CreditLedger(
-        user_id=user.id,
-        job_id=job_id,
-        delta_credits=-cost,
-        reason=LedgerReason.JOB_CHARGE,
-    )
-
+    # Atomic-ish charge + job insert.
+    #
+    # IMPORTANT: Ensure the job row is inserted before the ledger row, otherwise
+    # Postgres can raise a FK violation on credit_ledger.job_id.
     db.add(job)
-    db.add(ledger)
+    db.flush()  # inserts job (or will be rolled back if commit fails)
+
+    user.credits_balance -= cost
+    db.add(
+        CreditLedger(
+            user_id=user.id,
+            job_id=job.id,
+            delta_credits=-cost,
+            reason=LedgerReason.JOB_CHARGE,
+        )
+    )
     db.commit()
     db.refresh(job)
 
