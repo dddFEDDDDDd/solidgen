@@ -37,6 +37,20 @@ def fetch_job(conn, job_id: uuid.UUID) -> dict[str, Any] | None:
         return dict(row) if row else None
 
 
+def try_advisory_lock_job(conn, job_id: uuid.UUID) -> bool:
+    """
+    Acquire a session-level advisory lock for this job_id.
+
+    This prevents duplicate processing across multiple worker processes if Pub/Sub redelivers.
+    Lock is released automatically when the DB connection closes.
+    """
+    key1 = str(job_id)
+    key2 = f"{job_id}-2"
+    with conn.cursor() as cur:
+        cur.execute("SELECT pg_try_advisory_lock(hashtext(%s), hashtext(%s))", (key1, key2))
+        return bool(cur.fetchone()[0])
+
+
 def mark_job_running(conn, job_id: uuid.UUID):
     with conn.cursor() as cur:
         cur.execute(

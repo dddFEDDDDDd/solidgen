@@ -17,6 +17,7 @@ from solidgen_worker.db import (
     mark_job_running,
     mark_job_succeeded,
     refund_job_if_needed,
+    try_advisory_lock_job,
 )
 from solidgen_worker.gcs import download_image_from_gcs, upload_file_to_gcs
 from solidgen_worker.trellis_runner import run_trellis_to_glb
@@ -27,6 +28,10 @@ _future = None
 
 
 logger = logging.getLogger("solidgen-worker")
+
+
+class JobLockedError(Exception):
+    """Raised when another worker is already processing the same job_id."""
 
 
 def _handle_sigterm(_signum, _frame):
@@ -41,19 +46,22 @@ def process_job(job_id: uuid.UUID):
     logger.info("Processing job_id=%s", job_id)
     with db_conn() as conn:
         conn.autocommit = False
+
+        # Prevent duplicate processing on Pub/Sub redelivery.
+        if not try_advisory_lock_job(conn, job_id):
+            conn.rollback()
+            raise JobLockedError(str(job_id))
+
         job = fetch_job(conn, job_id)
         if not job:
-            logger.error("Job not found in DB (job_id=%s). Check worker DATABASE_URL / proxy.", job_id)
+            # Stale Pub/Sub message (or wrong DB). Return normally so the caller ACKs.
+            logger.warning("Job not found in DB; acking message (job_id=%s).", job_id)
             conn.rollback()
-            raise RuntimeError(f"job_not_found:{job_id}")
+            return
 
         status = str(job.get("status") or "")
         if status in {"SUCCEEDED"}:
             logger.info("Job already SUCCEEDED (job_id=%s); skipping.", job_id)
-            conn.rollback()
-            return
-        if status in {"RUNNING"}:
-            logger.info("Job already RUNNING (job_id=%s); skipping.", job_id)
             conn.rollback()
             return
         if status in {"FAILED"}:
@@ -61,48 +69,52 @@ def process_job(job_id: uuid.UUID):
             conn.rollback()
             return
 
+        if status == "RUNNING":
+            # If Pub/Sub redelivered, the original attempt never ACKed. Re-process.
+            logger.warning("Job is RUNNING but message redelivered; re-processing (job_id=%s).", job_id)
+
         mark_job_running(conn, job_id)
         conn.commit()
         logger.info("Marked RUNNING (job_id=%s)", job_id)
 
-    # Heavy work outside transaction
-    try:
-        image = download_image_from_gcs(job["input_gcs_uri"])
-        params = job.get("params") or {}
-        resolution = int(params.get("resolution") or 1024)
-        seed = int(params.get("seed") or 0)
-        decimation_target = int(params.get("decimation_target") or 500_000)
-        texture_size = int(params.get("texture_size") or 2048)
+        try:
+            logger.info("Downloading input image (job_id=%s, uri=%s)", job_id, job["input_gcs_uri"])
+            image = download_image_from_gcs(job["input_gcs_uri"])
+            logger.info("Downloaded input image (job_id=%s)", job_id)
 
-        repo_root = os.environ.get("SOLIDGEN_REPO_ROOT") or os.getcwd()
-        out = run_trellis_to_glb(
-            repo_root=repo_root,
-            image=image,
-            model_id=settings.trellis_model_id,
-            resolution=resolution,
-            seed=seed,
-            decimation_target=decimation_target,
-            texture_size=texture_size,
-        )
+            params = job.get("params") or {}
+            resolution = int(params.get("resolution") or 1024)
+            seed = int(params.get("seed") or 0)
+            decimation_target = int(params.get("decimation_target") or 500_000)
+            texture_size = int(params.get("texture_size") or 2048)
 
-        object_name = f"outputs/{job['user_id']}/{job_id}/asset.glb"
-        output_uri = upload_file_to_gcs(local_path=out.glb_path, object_name=object_name, content_type="model/gltf-binary")
+            repo_root = os.environ.get("SOLIDGEN_REPO_ROOT") or os.getcwd()
+            out = run_trellis_to_glb(
+                repo_root=repo_root,
+                image=image,
+                model_id=settings.trellis_model_id,
+                resolution=resolution,
+                seed=seed,
+                decimation_target=decimation_target,
+                texture_size=texture_size,
+            )
 
-        with db_conn() as conn2:
-            conn2.autocommit = False
-            mark_job_succeeded(conn2, job_id, output_uri)
-            conn2.commit()
-        logger.info("Marked SUCCEEDED (job_id=%s, output=%s)", job_id, output_uri)
-    except Exception as e:
-        err = f"{type(e).__name__}: {e}"
-        logger.exception("Job failed (job_id=%s): %s", job_id, err)
-        with db_conn() as conn3:
-            conn3.autocommit = False
-            mark_job_failed(conn3, job_id, err)
-            job_row = fetch_job(conn3, job_id)
+            object_name = f"outputs/{job['user_id']}/{job_id}/asset.glb"
+            logger.info("Uploading output to GCS (job_id=%s, object=%s)", job_id, object_name)
+            output_uri = upload_file_to_gcs(local_path=out.glb_path, object_name=object_name, content_type="model/gltf-binary")
+            logger.info("Uploaded output to GCS (job_id=%s, uri=%s)", job_id, output_uri)
+
+            mark_job_succeeded(conn, job_id, output_uri)
+            conn.commit()
+            logger.info("Marked SUCCEEDED (job_id=%s, output=%s)", job_id, output_uri)
+        except Exception as e:
+            err = f"{type(e).__name__}: {e}"
+            logger.exception("Job failed (job_id=%s): %s", job_id, err)
+            mark_job_failed(conn, job_id, err)
+            job_row = fetch_job(conn, job_id)
             if job_row:
-                refund_job_if_needed(conn3, job_row)
-            conn3.commit()
+                refund_job_if_needed(conn, job_row)
+            conn.commit()
 
 
 def main():
@@ -136,6 +148,9 @@ def main():
             process_job(job_id)
             message.ack()
             logger.info("Acked Pub/Sub message job_id=%s", job_id)
+        except JobLockedError:
+            logger.info("Job is locked by another worker; nacking for retry. job_id=%s", job_id)
+            message.nack()
         except Exception:
             # NACK so it retries (DB down, proxy misconfigured, transient GCS, etc.)
             logger.exception("Error processing job_id=%s; nacking for retry.", job_id)

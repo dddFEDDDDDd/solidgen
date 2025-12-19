@@ -146,6 +146,9 @@ DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_NAME=${DB_NAME}
 DATABASE_URL=postgresql://${DB_USER}:${DB_PASS}@127.0.0.1:5432/${DB_NAME}
+# Default to DINOv3 (HF gated); override with TRELLIS_IMAGE_MODEL_* and set HF token via service drop-in.
+TRELLIS_IMAGE_MODEL_ID=facebook/dinov3-vitl16-pretrain-lvd1689m
+TRELLIS_IMAGE_MODEL_KIND=dinov3
 EOF
 
 sudo tee /etc/systemd/system/solidgen-worker.service >/dev/null <<EOF
