@@ -40,3 +40,5 @@ def get_current_user(db: Session = Depends(get_db), token: str = Depends(get_bea
     return user
 
 
+
+

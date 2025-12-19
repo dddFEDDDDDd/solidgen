@@ -32,3 +32,5 @@ def upload_file_to_gcs(*, local_path: str, object_name: str, content_type: str) 
     return f"gs://{settings.gcs_bucket}/{object_name}"
 
 
+
+

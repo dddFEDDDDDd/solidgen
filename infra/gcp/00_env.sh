@@ -39,3 +39,5 @@ echo "ZONE=$ZONE"
 echo "GCS_BUCKET=$GCS_BUCKET"
 
 
+
+

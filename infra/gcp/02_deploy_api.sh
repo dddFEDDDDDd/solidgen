@@ -46,3 +46,5 @@ echo "API deployed: $API_URL"
 echo "NOTE: After deploying web, re-run 03_deploy_web.sh (it will update STRIPE_SUCCESS_URL/STRIPE_CANCEL_URL)."
 
 
+
+
