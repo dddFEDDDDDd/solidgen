@@ -61,7 +61,27 @@ if [ -z "$CONDA_SH" ] || ! command -v conda >/dev/null 2>&1; then
 fi
 
 # setup.sh is designed to be sourced from the TRELLIS.2 repo root.
-export CUDA_HOME="${CUDA_HOME:-/usr/local/cuda}"
+# NOTE: Upstream installs PyTorch cu124, so prefer a CUDA 12.4 toolkit if present.
+if [ -z "${CUDA_HOME:-}" ]; then
+  if [ -d "/usr/local/cuda-12.4" ]; then
+    CUDA_HOME="/usr/local/cuda-12.4"
+  else
+    CUDA_HOME="/usr/local/cuda"
+  fi
+fi
+export CUDA_HOME
+export PATH="$CUDA_HOME/bin:$PATH"
+
+# Make reruns idempotent: upstream uses /tmp/extensions and doesn't clean up.
+sudo rm -rf \
+  /tmp/extensions/nvdiffrast \
+  /tmp/extensions/CuMesh \
+  /tmp/extensions/FlexGEMM \
+  /tmp/extensions/o-voxel \
+  /tmp/extensions/nvdiffrec \
+  /tmp/extensions/flash-attention \
+  2>/dev/null || true
+
 pushd vendor/trellis2_upstream >/dev/null
 # NOTE:
 # - flash-attn 2.x does NOT support older GPUs like Tesla P100 (sm60).
