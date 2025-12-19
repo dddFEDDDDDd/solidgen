@@ -4,6 +4,8 @@ google-auth==2.36.0
 
 psycopg2-binary==2.9.10
 
+pydantic-settings==2.6.1
+
 pillow==11.0.0
 
 
